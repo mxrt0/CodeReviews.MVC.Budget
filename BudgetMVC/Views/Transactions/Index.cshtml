@@ -1,0 +1,327 @@
+﻿@{
+    ViewData["Title"] = "Transactions";
+}
+@model TransactionsViewModel
+
+
+ <div id="success-toast" class="toast align-items-center text-bg-success border-0" role="alert">
+        <div class="d-flex">
+        <div class="toast-body" id="toast-body">
+                @TempData["SuccessMessage"]
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="hideToast()">&times;</button>
+        </div>
+  </div>
+
+<div class="container py-5">
+    @await Html.PartialAsync("_ErrorPartial")
+    <h1 class="mb-5">Transaction Dashboard</h1>
+
+    @await Html.PartialAsync("_CreateTransaction", Model)
+
+    <div id="modalContainer"></div>
+    <div class="search-container">
+        <form asp-action="Search" method="get" class="search-form">
+            
+            <input type="text"
+                   name="q"
+                   value="@Context.Request.Query["q"].ToString()"
+                   class="search-input"
+                   placeholder="Search transactions by description..." />
+            <select name="categoryId" class="search-select">
+                <option value="">All Categories</option>
+                @foreach (var cat in Model.Categories)
+                {
+                    @if (Context.Request.Query["categoryId"] == cat.Value)
+                    {
+                        <option value="@cat.Value" selected>@cat.Text</option>
+                    }
+                    else
+                    {
+                        <option value="@cat.Value">@cat.Text</option>
+                    }
+                }
+            </select>
+            <input type="date"
+                   name="date"
+                   value="@Context.Request.Query["date"].ToString()"
+                   class="search-date" />
+            <button type="submit" class="search-btn">Search</button>
+            <button type="button" class="clear-btn" id="clearFiltersBtn">Clear Filters</button>
+        </form>
+    </div>
+
+    <div class="card table-card">
+        <div class="card-header">
+            All Transactions
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 rounded-3">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th>#</th>
+                        <th>Category</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="text-center">
+                    @if (Model.Transactions != null && Model.Transactions.Any())
+                    {
+                        foreach (var t in Model.Transactions)
+                        {
+                            CultureInfo culture = t.Currency switch
+                            {
+                                "GBP" => new CultureInfo("en-GB"),
+                                "EUR" => new CultureInfo("en-IE"),
+                                _ => new CultureInfo("en-US"),
+                            };
+
+                            <tr class="@(t.IsRecurring ? "tr-recurring" : "")">
+                                <td>@t.Id</td>
+                                <td>@t.Category?.Name</td>
+                                <td>@t.Amount.ToString("C", culture)</td>
+                                <td>@t.Date.ToString("yyyy-MM-dd")</td>
+                                <td class="description">
+                                    @t.Description
+                                    @if (t.IsRecurring)
+                                    {
+                                        <span class="badge recurring-badge" title="Recurring transaction">
+                                            🔁 Recurring
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <a data-id="@t.Id" class="btn btn-sm me-1 btn-info">Edit</a>
+                                    <a data-id="@t.Id" class="btn btn-sm btn-danger">Delete</a>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    else if (string.IsNullOrWhiteSpace(Context.Request.Query["q"]) && string.IsNullOrWhiteSpace(Context.Request.Query["categoryId"])
+                    && string.IsNullOrWhiteSpace(Context.Request.Query["date"]))
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center py-3 text-muted">No transactions found.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center py-3 text-muted">No matching transactions found.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>  
+        </div>        
+    </div>
+    @if (Model.TotalPages > 1)
+    {
+        <div class="pagination-container">
+            <nav>
+                <ul class="pagination">
+                    @if (Model.CurrentPage > 1)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" asp-action="Index"
+                               asp-route-page="@(Model.CurrentPage - 1)"
+                               asp-route-q="@Context.Request.Query["q"]"
+                               asp-route-categoryId="@Context.Request.Query["categoryId"]"
+                               asp-route-date="@Context.Request.Query["date"]">Previous</a>
+                        </li>
+                    }
+
+                    @for (int i = 1; i <= Model.TotalPages; i++)
+                    {
+                        <li class="page-item @(i == Model.CurrentPage ? "active" : "")">
+                            <a class="page-link"
+                               asp-action="Index"
+                               asp-route-page="@i"
+                               asp-route-q="@Context.Request.Query["q"]"
+                               asp-route-categoryId="@Context.Request.Query["categoryId"]"
+                               asp-route-date="@Context.Request.Query["date"]">@i</a>
+                        </li>
+                    }
+
+                    @if (Model.CurrentPage < Model.TotalPages)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" asp-action="Index"
+                               asp-route-page="@(Model.CurrentPage + 1)"
+                               asp-route-q="@Context.Request.Query["q"]"
+                               asp-route-categoryId="@Context.Request.Query["categoryId"]"
+                               asp-route-date="@Context.Request.Query["date"]">Next</a>
+                        </li>
+                    }
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
+
+<script>    
+    window.addEventListener('DOMContentLoaded', () => {
+        const searchForm = document.querySelector('.search-form');
+        const searchInput = searchForm.querySelector('.search-input');
+        const clearBtn = document.getElementById('clearFiltersBtn');
+
+        clearBtn.addEventListener('click', (e) => {
+         e.preventDefault();
+         e.stopPropagation();
+
+        searchForm.querySelectorAll('input, select').forEach(el => {
+        if (el.tagName.toLowerCase() === 'select') el.selectedIndex = 0;
+        else el.value = '';
+
+        });
+
+        searchForm.submit();
+    });
+        const valueLength = searchInput.value.length;
+        searchInput.focus();
+        searchInput.setSelectionRange(valueLength, valueLength);
+
+        const message = sessionStorage.getItem('toastMessage');
+        if (message) {
+        showToast(message);
+        sessionStorage.removeItem('toastMessage');
+       }
+       const toastBody = document.getElementById('toast-body');
+       if (toastBody && toastBody.textContent.trim() !== '') {
+        showToast(toastBody.textContent);
+    }
+
+     let debounceTimeout;     
+     searchInput.addEventListener('input', () => {
+         clearTimeout(debounceTimeout);
+         debounceTimeout = setTimeout(() => {
+             searchForm.submit();
+         }, 300);
+     })
+        document.querySelectorAll('.btn-danger').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+
+                fetch(`/Transactions/DeleteModalPartial/${id}`)
+                    .then(res => res.text())
+                    .then(html => {
+                        document.getElementById('modalContainer').innerHTML = html;
+
+                        const modalEl = document.getElementById('deleteTransactionModal');
+                        const modal = new bootstrap.Modal(modalEl);
+                        modal.show();
+                    });
+            });
+        });
+
+            document.querySelectorAll('.btn-info').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            fetch(`/Transactions/EditModalPartial/${id}`)
+                .then(res => res.text())
+                .then(html => {
+                    document.getElementById('modalContainer').innerHTML = html;
+                    const modalEl = document.getElementById('editTransactionModal');
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+
+                    
+                    const $form = $('#editForm');
+                    $.validator.unobtrusive.parse($form);
+
+                    bindEditForm(id);
+                });
+        });
+    });
+    });
+    function showToast(message) {
+        const toast = document.getElementById('success-toast');
+        const toastBody = document.getElementById('toast-body');
+        if (!toastBody) return;
+
+        toastBody.textContent = message;
+
+        if (toast) {
+            toast.classList.add('show');
+
+            setTimeout(() => {
+                hideToast();
+            }, 3000);
+        } 
+    }
+
+    function hideToast() {
+        const toast = document.getElementById('success-toast');
+        toast.classList.remove('show');
+        toast.classList.add('hide');
+    }
+                function bindEditForm(id) {
+        const form = document.getElementById('editForm');
+        if (!form) {
+            console.error('Form not found');
+            return;
+        }
+
+        
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+
+        newForm.addEventListener('submit', async e => {
+            e.preventDefault();
+   
+            const $form = $(newForm);
+            const isValid = $form.valid();
+            
+            if (!isValid) {
+                
+                return false;
+            }
+
+            try {
+                const response = await fetch(`/Transactions/Edit/${id}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: new FormData(newForm)
+                }); 
+                const contentType = response.headers.get('content-type'); 
+                if (contentType && contentType.includes('application/json')) {
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        const modalEl = document.getElementById('editTransactionModal');
+                        const modal = new bootstrap.Modal(modalEl);
+                        modal.hide();
+                        sessionStorage.setItem('toastMessage', `Successfully edited transaction #${id}!`);
+                        window.location.reload();        
+                    }
+                    return;
+                }
+  
+                const html = await response.text();
+                document.getElementById('modalContainer').innerHTML = html;
+
+                const $newForm = $('#editForm');
+                $.validator.unobtrusive.parse($newForm);
+
+                bindEditForm(id);
+
+                    const newModalEl = document.getElementById('editTransactionModal');
+                    if (newModalEl) {
+                        const newModal = new bootstrap.Modal(newModalEl);
+                        newModal.show();
+                    }
+            } catch (error) {
+                console.error('Error submitting form:', error);
+            }
+        });
+    }
+
+</script>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
